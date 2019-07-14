@@ -3,11 +3,11 @@ package parse
 }
 
 MessageFile <- BOM? lines:MessageLine* EOF {
-  return newMessageFile(lines)
+  return newMessageFile(lines, false)
 }
 
 MessageTypeFile <- lines:TypeLine* EOF {
-  return newMessageFile(lines)
+  return newMessageFile(lines, true)
 }
 
 BOM <- "\uFEFF"

@@ -5,4 +5,5 @@ require (
 	github.com/mna/pigeon v1.0.0 // indirect
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/viper v1.4.0
+	golang.org/x/text v0.3.0
 )

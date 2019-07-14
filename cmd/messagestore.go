@@ -53,7 +53,7 @@ var messagestoreConvertCmd = &cobra.Command{
 		if template != "" {
 			t = messagestore.NewStore()
 			t.Verbose = verbose
-			t.BaseDir = filepath.Dir(from)
+			t.BaseDir = filepath.Dir(template)
 			if err := t.Read(template); err != nil {
 				return fmt.Errorf("failed to read %s: %s", template, err)
 			}
@@ -145,10 +145,10 @@ var messagestoreDiffCmd = &cobra.Command{
 		var i, j int
 		for i < len(idsA) && j < len(idsB) {
 			if i > len(idsA) || idsA[i] > idsB[j] {
-				fmt.Printf("-%s: %s\n", idsB[j], b.Message(idsB[j]))
+				fmt.Printf("+%s: %s\n", idsB[j], b.Message(idsB[j]))
 				j += 1
 			} else if j > len(idsB) || idsA[i] < idsB[j] {
-				fmt.Printf("+%s: %s\n", idsA[i], a.Message(idsA[i]))
+				fmt.Printf("-%s: %s\n", idsA[i], a.Message(idsA[i]))
 				i += 1
 			} else {
 				id := idsA[i]

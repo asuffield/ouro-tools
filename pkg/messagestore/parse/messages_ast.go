@@ -9,11 +9,18 @@ import (
 )
 
 type MessageFile struct {
-	Lines []Line
+	Lines    []Line
+	TypeFile bool
+}
+
+type MessageData interface {
+	Message(string) string
+	MessageVarTypes(string) map[string]string
 }
 
 type Line interface {
 	Format() string
+	FormatWith(MessageData) string
 	Messages() []Message
 	Types() []Type
 }
@@ -30,6 +37,23 @@ type Type struct {
 
 type Var struct {
 	Name, Ty string
+}
+
+// Reconstruct an AST from some data, when we don't have a template
+func NewFromData(header string, messages []Message, types []Type) *MessageFile {
+	lines := []Line{&comment{comment: header}}
+	for _, m := range messages {
+		lines = append(lines, &message{id: m.Id, gap: " "})
+	}
+	// There is no valid format for this
+	//for _, t := range types {
+	//	vars := []*varType{}
+	//	for _, v := range t.Vars {
+	//		vars = append(vars, &varType{name: v.Name, ty: v.Ty})
+	//	}
+	//	lines = append(lines, &messageType{id: t.Id, varTypes: vars})
+	//}
+	return &MessageFile{Lines: lines}
 }
 
 func toIfaceSlice(v interface{}) []interface{} {
@@ -51,12 +75,12 @@ func toFlatString(v interface{}) string {
 	return str.String()
 }
 
-func newMessageFile(messages interface{}) (*MessageFile, error) {
+func newMessageFile(messages interface{}, types bool) (*MessageFile, error) {
 	ms := []Line{}
 	for _, m := range toIfaceSlice(messages) {
 		ms = append(ms, m.(Line))
 	}
-	return &MessageFile{ms}, nil
+	return &MessageFile{ms, types}, nil
 }
 
 type empty struct {
@@ -77,10 +101,14 @@ type Import struct {
 
 func (i *Import) Format() string {
 	if i.TypeFile != "" {
-		return fmt.Sprintf("import %s %s", i.MessageFile, i.TypeFile)
+		return fmt.Sprintf("import %s %s\r\n", i.MessageFile, i.TypeFile)
 	} else {
-		return fmt.Sprintf("import %s", i.MessageFile)
+		return fmt.Sprintf("import %s\r\n", i.MessageFile)
 	}
+}
+
+func (i *Import) FormatWith(_ MessageData) string {
+	return i.Format()
 }
 
 func newImport(messageFile, typeFile string) (*Import, error) {
@@ -102,6 +130,10 @@ func (*blank) Format() string {
 	return "\r\n"
 }
 
+func (b *blank) FormatWith(_ MessageData) string {
+	return b.Format()
+}
+
 type comment struct {
 	empty
 	comment string
@@ -113,6 +145,10 @@ func newComment(c string) (*comment, error) {
 
 func (c *comment) Format() string {
 	return fmt.Sprintf("%s\r\n", c.comment)
+}
+
+func (c *comment) FormatWith(_ MessageData) string {
+	return c.Format()
 }
 
 type message struct {
@@ -127,6 +163,18 @@ type messageString interface {
 
 func (m *message) Format() string {
 	return fmt.Sprintf("\"%s\"%s%s%s\r\n", m.id, m.gap, m.message.Format(), m.junk)
+}
+
+func (m *message) FormatWith(d MessageData) string {
+	content := d.Message(m.id)
+	if content == "" {
+		return fmt.Sprintf("// %s", m.Format())
+	}
+	if m.message.multiline || strings.ContainsAny(content, "\r\n") {
+		return fmt.Sprintf("\"%s\"%s<<%s>>%s\r\n", m.id, m.gap, content, m.junk)
+	} else {
+		return fmt.Sprintf("\"%s\"%s\"%s\"%s\r\n", m.id, m.gap, content, m.junk)
+	}
 }
 
 func (m *message) Messages() []Message {
@@ -178,7 +226,19 @@ type varType struct {
 }
 
 func (s *varType) Format() string {
-	return fmt.Sprintf("%s{%s%s,%s%s}", s.junk, s.p1, s.name, s.p2, s.ty)
+	if s.p2 != "" || s.ty != "" {
+		return fmt.Sprintf("%s{%s%s,%s%s}", s.junk, s.p1, s.name, s.p2, s.ty)
+	} else {
+		return fmt.Sprintf("%s{%s%s}", s.junk, s.p1, s.name)
+	}
+}
+
+func (s *varType) FormatWith(ty string) string {
+	if s.p2 != "" || ty != "" {
+		return fmt.Sprintf("%s{%s%s,%s%s}", s.junk, s.p1, s.name, s.p2, ty)
+	} else {
+		return fmt.Sprintf("%s{%s%s}", s.junk, s.p1, s.name)
+	}
 }
 
 func newVarType(name, ty, junk, p1, p2 interface{}) (*varType, error) {
@@ -197,13 +257,31 @@ type messageType struct {
 	junk     string
 }
 
-func (s *messageType) Format() string {
+func (m *messageType) Format() string {
 	var str strings.Builder
-	str.WriteString(fmt.Sprintf("\"%s\"", s.id))
-	for _, t := range s.varTypes {
+	str.WriteString(fmt.Sprintf("\"%s\"", m.id))
+	for _, t := range m.varTypes {
 		str.WriteString(t.Format())
 	}
-	str.WriteString(s.junk)
+	str.WriteString(m.junk)
+	str.WriteString("\r\n")
+	return str.String()
+}
+
+func (m *messageType) FormatWith(d MessageData) string {
+	tys := d.MessageVarTypes(m.id)
+	if len(tys) == 0 {
+		return fmt.Sprintf("// %s", m.Format())
+	}
+
+	var str strings.Builder
+	str.WriteString(fmt.Sprintf("\"%s\"", m.id))
+	for _, t := range m.varTypes {
+		if ty, ok := tys[t.name]; ok {
+			str.WriteString(t.FormatWith(ty))
+		}
+	}
+	str.WriteString(m.junk)
 	str.WriteString("\r\n")
 	return str.String()
 }
