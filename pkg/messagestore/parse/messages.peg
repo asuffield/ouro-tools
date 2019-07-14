@@ -1,0 +1,73 @@
+{
+package parse
+}
+
+MessageFile <- BOM? lines:MessageLine* EOF {
+  return newMessageFile(lines)
+}
+
+MessageTypeFile <- lines:TypeLine* EOF {
+  return newMessageFile(lines)
+}
+
+BOM <- "\uFEFF"
+
+EOF ← !.
+
+MessageLine <- line:(Blank / Comment / Import / Message) ("\r\n" / "\r" / "\n" / EOF) {
+  return line, nil
+}
+
+TypeLine <- line:(Blank / Comment / Type) ("\r\n" / "\n" / EOF) {
+  return line, nil
+}
+
+Blank <- &[\r\n] {
+  return newBlank()
+}
+
+Comment <- ("//" / "#") [^\r\n]* {
+  return newComment(string(c.text))
+}
+
+Import <-
+  "import" [ \t]+ messageFile:Filename [ \t]+ typeFile:Filename
+    { return newImport(messageFile.(string), typeFile.(string)) }
+  / "import" [ \t]+ messageFile:Filename
+    { return newImport(messageFile.(string), "") }
+
+Filename <- [^ \t\r\n]+ {
+  return string(c.text), nil
+}
+
+Message <- '"' id:MessageID '"' gap:[^"<\r\n]* message:(String / MultilineString) junk:[^\r\n]* {
+  return newMessage(id, gap, message, junk)
+}
+
+Type <- '"' id:MessageID '"' vars:VariableType* junk:[^\r\n]* {
+  return newMessageType(id, vars, junk)
+}
+
+VariableType <-
+  junk:[^{\r\n]* '{' p1:' '* name:[^,}\r\n]* ',' p2:' '* ty:[^}\r\n]* '}'
+    { return newVarType(name, ty, junk, p1, p2) }
+/ junk:[^{\r\n]* '{' p1:' '* name:[^,}\r\n]* '}'
+    { return newVarType(name, nil, junk, p1, nil) }
+
+MessageID <- [^"\r\n]+ {
+  return string(c.text), nil
+}
+
+// Parsing of strings is quite bizarre. This is how the format works.
+String <- '"' (
+  [^"\\\r\n]       // Anything that's not a \ " or newline
+  / '\\' '"'       // The literal sequence \"
+  / '\\'           // Any other \ is also tolerated
+  / '"' &( [^\r\n"]* '"' ) // Stray extra " will also be included, as long as they are not the last " in the line
+  )* '"' {
+  return newString(string(c.text))
+}
+
+MultilineString <- "<<" content:( '>' !'>' / [^>] )* ">>" {
+  return newMultilineString(string(c.text))
+}
