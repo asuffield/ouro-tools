@@ -15,6 +15,7 @@ type MessageFile struct {
 
 type MessageData interface {
 	Message(string) string
+	HasMessage(string) bool
 	MessageVarTypes(string) map[string]string
 }
 
@@ -45,14 +46,16 @@ func NewFromData(header string, messages []Message, types []Type) *MessageFile {
 	for _, m := range messages {
 		lines = append(lines, &message{id: m.Id, gap: " "})
 	}
-	// There is no valid format for this
-	//for _, t := range types {
-	//	vars := []*varType{}
-	//	for _, v := range t.Vars {
-	//		vars = append(vars, &varType{name: v.Name, ty: v.Ty})
-	//	}
-	//	lines = append(lines, &messageType{id: t.Id, varTypes: vars})
-	//}
+
+	// There is no valid format for this, but we'll emit what we can
+	for _, t := range types {
+		vars := []*varType{}
+		for _, v := range t.Vars {
+			vars = append(vars, &varType{name: v.Name, ty: v.Ty})
+		}
+		ty := &messageType{id: t.Id, varTypes: vars}
+		lines = append(lines, &comment{comment: fmt.Sprintf("// TYPE: %s", ty.Format())})
+	}
 	return &MessageFile{Lines: lines}
 }
 
@@ -166,11 +169,12 @@ func (m *message) Format() string {
 }
 
 func (m *message) FormatWith(d MessageData) string {
-	content := d.Message(m.id)
-	if content == "" {
+	if !d.HasMessage(m.id) {
 		return fmt.Sprintf("// %s", m.Format())
 	}
-	if m.message.multiline || strings.ContainsAny(content, "\r\n") {
+	content := d.Message(m.id)
+
+	if (m.message != nil && m.message.multiline) || strings.ContainsAny(content, "\r\n") {
 		return fmt.Sprintf("\"%s\"%s<<%s>>%s\r\n", m.id, m.gap, content, m.junk)
 	} else {
 		return fmt.Sprintf("\"%s\"%s\"%s\"%s\r\n", m.id, m.gap, content, m.junk)
@@ -210,7 +214,11 @@ type msgString struct {
 }
 
 func (s *msgString) Format() string {
-	return s.content
+	if s == nil {
+		return "nil"
+	} else {
+		return s.content
+	}
 }
 
 func newString(content string) (*msgString, error) {
@@ -269,10 +277,21 @@ func (m *messageType) Format() string {
 }
 
 func (m *messageType) FormatWith(d MessageData) string {
-	tys := d.MessageVarTypes(m.id)
-	if len(tys) == 0 {
+	var id string
+	// Find a message for this type which exists, because that's where
+	// the data will be stored. It could have gone into any of these
+	// prefixes.
+	for _, prefix := range []string{"", "v_", "p_", "l_"} {
+		id = prefix + m.id
+		if d.HasMessage(id) {
+			break
+		}
+	}
+	if !d.HasMessage(id) {
 		return fmt.Sprintf("// %s", m.Format())
 	}
+
+	tys := d.MessageVarTypes(id)
 
 	var str strings.Builder
 	str.WriteString(fmt.Sprintf("\"%s\"", m.id))

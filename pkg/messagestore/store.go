@@ -85,6 +85,11 @@ func (s *Store) MessageIDs() []string {
 	return ids
 }
 
+func (s *Store) HasMessage(id string) bool {
+	_, ok := s.messages[strings.ToLower(id)]
+	return ok
+}
+
 func (s *Store) Message(id string) string {
 	msg, ok := s.messages[strings.ToLower(id)]
 	if !ok {
