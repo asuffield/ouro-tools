@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,7 +15,9 @@ import (
 const BinarySignature = 20090521
 
 type Store struct {
-	Verbose       bool
+	Verbose bool
+	BaseDir string
+
 	readBinary    bool
 	useHelpIndex  bool
 	messageTable  *stringtable.Table
@@ -107,13 +110,44 @@ func (s *Store) MessageVarTypes(id string) map[string]string {
 	return types
 }
 
+func (s *Store) tryAbs(path string) string {
+	// Make abs, if possible
+	a, err := filepath.Abs(path)
+	if err == nil {
+		path = a
+	}
+
+	if s.BaseDir == "" {
+		return path
+	}
+
+	// Make relative, if possible
+	base, err := filepath.Abs(s.BaseDir)
+	if err != nil {
+		return path
+	}
+	r, err := filepath.Rel(base, path)
+	if err == nil {
+		path = r
+	}
+
+	return path
+}
+
 func (s *Store) addInputFile(path string, f *parse.MessageFile) {
+	path = s.tryAbs(path)
 	s.inputFiles[path] = f
 }
 
 func (s *Store) hasInputFile(path string) bool {
+	path = s.tryAbs(path)
 	_, ok := s.inputFiles[path]
 	return ok
+}
+
+func (s *Store) inputFile(path string) *parse.MessageFile {
+	path = s.tryAbs(path)
+	return s.inputFiles[path]
 }
 
 func (s *Store) insert(id string) *Message {

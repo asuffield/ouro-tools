@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -13,8 +14,8 @@ import (
 )
 
 var (
-	from     []string
-	template []string
+	from     string
+	template string
 	to       string
 	all      bool
 )
@@ -31,17 +32,16 @@ var messagestoreConvertCmd = &cobra.Command{
 	Short: "convert to/from the messagestore format",
 	Long:  `Reads and writes messagestore text and binary files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(from) == 0 || to == "" {
+		if from == "" || to == "" {
 			return fmt.Errorf("--from and --to are required")
 		}
 
 		s := messagestore.NewStore()
 		s.Verbose = verbose
+		s.BaseDir = filepath.Dir(from)
 
-		for _, path := range from {
-			if err := s.Read(path); err != nil {
-				return fmt.Errorf("failed to read %s: %s", path, err)
-			}
+		if err := s.Read(from); err != nil {
+			return fmt.Errorf("failed to read %s: %s", from, err)
 		}
 
 		if verbose {
@@ -50,13 +50,12 @@ var messagestoreConvertCmd = &cobra.Command{
 		}
 
 		var t *messagestore.Store
-		if len(template) != 0 {
+		if template != "" {
 			t = messagestore.NewStore()
 			t.Verbose = verbose
-			for _, path := range template {
-				if err := t.Read(path); err != nil {
-					return fmt.Errorf("failed to read %s: %s", path, err)
-				}
+			t.BaseDir = filepath.Dir(from)
+			if err := t.Read(template); err != nil {
+				return fmt.Errorf("failed to read %s: %s", template, err)
 			}
 			if verbose {
 				fmt.Printf("Template:\n")
@@ -86,21 +85,16 @@ func formatMessage(s *messagestore.Store, id string) string {
 }
 
 var messagestoreShowCmd = &cobra.Command{
-	Use:   "messagestore",
+	Use:   "messagestore <filename>",
 	Short: "dump the messagestore format",
 	Long:  `Reads messagestore text and binary files.`,
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(from) == 0 {
-			return fmt.Errorf("--from is required")
-		}
-
 		s := messagestore.NewStore()
 		s.Verbose = verbose
 
-		for _, path := range from {
-			if err := s.Read(path); err != nil {
-				return fmt.Errorf("failed to read %s: %s", path, err)
-			}
+		if err := s.Read(args[0]); err != nil {
+			return fmt.Errorf("failed to read %s: %s", args[0], err)
 		}
 
 		if verbose {
@@ -121,7 +115,7 @@ var messagestoreShowCmd = &cobra.Command{
 }
 
 var messagestoreDiffCmd = &cobra.Command{
-	Use:   "messagestore",
+	Use:   "messagestore <a> <b>",
 	Short: "diff two files in the messagestore format",
 	Long:  `Diffs messagestore files.`,
 	Args:  cobra.ExactArgs(2),
@@ -179,13 +173,12 @@ var messagestoreDiffCmd = &cobra.Command{
 func init() {
 	convertCmd.AddCommand(messagestoreConvertCmd)
 
-	messagestoreConvertCmd.Flags().StringArrayVar(&from, "from", []string{}, "file/directories to read from")
-	messagestoreConvertCmd.Flags().StringArrayVar(&template, "template", []string{}, "file/directories to use as a template for writing")
+	messagestoreConvertCmd.Flags().StringVar(&from, "from", "", "file/directories to read from")
+	messagestoreConvertCmd.Flags().StringVar(&template, "template", "", "file/directories to use as a template for writing")
 	messagestoreConvertCmd.Flags().StringVar(&to, "to", "", "file/directory to write to")
 
 	showCmd.AddCommand(messagestoreShowCmd)
 
-	messagestoreShowCmd.Flags().StringArrayVar(&from, "from", []string{}, "file/directories to read from")
 	messagestoreShowCmd.Flags().BoolVar(&all, "all", false, "show all messages in store")
 
 	diffCmd.AddCommand(messagestoreDiffCmd)
